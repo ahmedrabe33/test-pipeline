@@ -9,8 +9,8 @@ pipeline {
     }
 
     stages {
-        stage('Checkout') {
-            agent { label 'test-agent' }
+        stage('Checkout Source Code') {
+            agent { label 'test--agent' }
 
             steps {
                 checkout scm
@@ -24,6 +24,12 @@ pipeline {
 
                     echo "Git commit:"
                     git rev-parse --short HEAD
+
+                    echo "Verify app files:"
+                    test -f package.json
+                    test -f Dockerfile
+                    test -d src
+                    test -d test
                 '''
 
                 stash name: 'source-code', includes: '**/*'
@@ -32,8 +38,8 @@ pipeline {
 
         stage('Parallel Code Validation') {
             parallel {
-                stage('Install Dependencies and Unit Tests') {
-                    agent { label 'test-agent' }
+                stage('Unit Tests') {
+                    agent { label 'test--agent' }
 
                     steps {
                         unstash 'source-code'
@@ -49,7 +55,7 @@ pipeline {
                 }
 
                 stage('Lint Code') {
-                    agent { label 'test-agent' }
+                    agent { label 'test--agent' }
 
                     steps {
                         unstash 'source-code'
@@ -65,7 +71,7 @@ pipeline {
                 }
 
                 stage('Dependency Audit') {
-                    agent { label 'test-agent' }
+                    agent { label 'test--agent' }
 
                     steps {
                         unstash 'source-code'
@@ -74,7 +80,7 @@ pipeline {
                             echo "Installing dependencies..."
                             npm ci
 
-                            echo "Running npm audit..."
+                            echo "Running dependency audit..."
                             npm audit --audit-level=high || true
                         '''
                     }
@@ -154,7 +160,7 @@ pipeline {
                         echo "Logging in to DockerHub..."
                         echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
 
-                        echo "Pushing image tag..."
+                        echo "Pushing version tag..."
                         docker push $IMAGE_NAME:$IMAGE_TAG
 
                         echo "Pushing latest tag..."
