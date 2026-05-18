@@ -10,7 +10,7 @@ pipeline {
 
     stages {
         stage('Checkout Source Code') {
-            agent { label 'test--agent' }
+            agent { label 'test-agent' }
 
             steps {
                 checkout scm
@@ -39,7 +39,7 @@ pipeline {
         stage('Parallel Code Validation') {
             parallel {
                 stage('Unit Tests') {
-                    agent { label 'test--agent' }
+                    agent { label 'test-agent' }
 
                     steps {
                         unstash 'source-code'
