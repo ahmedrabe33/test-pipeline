@@ -78,7 +78,7 @@ pipeline {
 
                         sh '''
                             echo "Installing dependencies..."
-                            npm ci
+                            npm install
 
                             echo "Running dependency audit..."
                             npm audit --audit-level=high || true
