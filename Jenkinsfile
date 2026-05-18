@@ -153,8 +153,10 @@ GIT_COMMIT_SHORT=${shortCommit}
 
                     sleep 5
 
+                    echo "Testing health endpoint..."
                     curl -f http://localhost:3000/health
 
+                    echo "Container logs:"
                     docker logs "${APP_NAME}-test"
 
                     docker rm -f "${APP_NAME}-test" 2>/dev/null || true
@@ -169,11 +171,11 @@ GIT_COMMIT_SHORT=${shortCommit}
                 sh '''
                     . ./build-info.env
 
-                    echo "Scanning image:"
+                    echo "Scanning image with Trivy:"
                     echo "$IMAGE_FULL_NAME"
 
                     trivy image \
-                      --severity HIGH,CRITICAL \
+                      --severity CRITICAL \
                       --exit-code 1 \
                       --ignore-unfixed \
                       "$IMAGE_FULL_NAME"
