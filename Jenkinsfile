@@ -55,7 +55,7 @@ pipeline {
                 }
 
                 stage('Lint Code') {
-                    agent { label 'test--agent' }
+                    agent { label 'test-agent' }
 
                     steps {
                         unstash 'source-code'
@@ -71,7 +71,7 @@ pipeline {
                 }
 
                 stage('Dependency Audit') {
-                    agent { label 'test--agent' }
+                    agent { label 'test-agent' }
 
                     steps {
                         unstash 'source-code'
