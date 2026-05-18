@@ -12,8 +12,6 @@ pipeline {
         APP_NAME = "test-pipeline-app"
         DOCKERHUB_USERNAME = "ahmedrabie222000"
         IMAGE_REPO = "${DOCKERHUB_USERNAME}/${APP_NAME}"
-        IMAGE_TAG = ""
-        IMAGE_FULL_NAME = ""
     }
 
     stages {
@@ -29,8 +27,14 @@ pipeline {
                         returnStdout: true
                     ).trim()
 
-                    env.IMAGE_TAG = "${shortCommit}-${BUILD_NUMBER}"
-                    env.IMAGE_FULL_NAME = "${env.IMAGE_REPO}:${env.IMAGE_TAG}"
+                    writeFile file: 'build-info.env', text: """
+IMAGE_TAG=${shortCommit}-${BUILD_NUMBER}
+IMAGE_FULL_NAME=${DOCKERHUB_USERNAME}/${APP_NAME}:${shortCommit}-${BUILD_NUMBER}
+IMAGE_REPO=${DOCKERHUB_USERNAME}/${APP_NAME}
+APP_NAME=${APP_NAME}
+BUILD_NUMBER=${BUILD_NUMBER}
+GIT_COMMIT_SHORT=${shortCommit}
+"""
                 }
 
                 sh '''
@@ -40,13 +44,10 @@ pipeline {
                     echo "Repository files:"
                     ls -la
 
-                    echo "Git commit:"
-                    git rev-parse --short HEAD
+                    echo "Build metadata:"
+                    cat build-info.env
 
-                    echo "Image tag:"
-                    echo "$IMAGE_TAG"
-
-                    echo "Verifying required files..."
+                    echo "Verify required files:"
                     test -f package.json
                     test -f package-lock.json
                     test -f Dockerfile
@@ -117,14 +118,18 @@ pipeline {
                 unstash 'source-code'
 
                 sh '''
-                    echo "Building Docker image..."
+                    . ./build-info.env
+
+                    echo "Building Docker image:"
+                    echo "$IMAGE_FULL_NAME"
+
                     docker build \
-                      -t $IMAGE_FULL_NAME \
-                      -t $IMAGE_REPO:latest \
+                      -t "$IMAGE_FULL_NAME" \
+                      -t "$IMAGE_REPO:latest" \
                       .
 
-                    echo "Docker image built:"
-                    docker images | grep $APP_NAME
+                    echo "Docker images:"
+                    docker images | grep "$APP_NAME"
                 '''
             }
         }
@@ -134,24 +139,25 @@ pipeline {
 
             steps {
                 sh '''
-                    echo "Running container smoke test..."
+                    . ./build-info.env
 
-                    docker rm -f ${APP_NAME}-test 2>/dev/null || true
+                    echo "Running smoke test for:"
+                    echo "$IMAGE_FULL_NAME"
+
+                    docker rm -f "${APP_NAME}-test" 2>/dev/null || true
 
                     docker run -d \
-                      --name ${APP_NAME}-test \
+                      --name "${APP_NAME}-test" \
                       -p 3000:3000 \
-                      $IMAGE_FULL_NAME
+                      "$IMAGE_FULL_NAME"
 
                     sleep 5
 
-                    echo "Testing health endpoint..."
                     curl -f http://localhost:3000/health
 
-                    echo "Container logs:"
-                    docker logs ${APP_NAME}-test
+                    docker logs "${APP_NAME}-test"
 
-                    docker rm -f ${APP_NAME}-test 2>/dev/null || true
+                    docker rm -f "${APP_NAME}-test" 2>/dev/null || true
                 '''
             }
         }
@@ -161,13 +167,16 @@ pipeline {
 
             steps {
                 sh '''
-                    echo "Scanning Docker image with Trivy..."
+                    . ./build-info.env
+
+                    echo "Scanning image:"
+                    echo "$IMAGE_FULL_NAME"
 
                     trivy image \
                       --severity HIGH,CRITICAL \
                       --exit-code 1 \
                       --ignore-unfixed \
-                      $IMAGE_FULL_NAME
+                      "$IMAGE_FULL_NAME"
                 '''
             }
         }
@@ -182,14 +191,16 @@ pipeline {
                     passwordVariable: 'DOCKER_PASS'
                 )]) {
                     sh '''
+                        . ./build-info.env
+
                         echo "Logging in to DockerHub..."
                         echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
 
-                        echo "Pushing version tag..."
-                        docker push $IMAGE_FULL_NAME
+                        echo "Pushing image:"
+                        echo "$IMAGE_FULL_NAME"
 
-                        echo "Pushing latest tag..."
-                        docker push $IMAGE_REPO:latest
+                        docker push "$IMAGE_FULL_NAME"
+                        docker push "$IMAGE_REPO:latest"
                     '''
                 }
             }
@@ -199,20 +210,14 @@ pipeline {
             agent { label 'test-agent' }
 
             steps {
-                sh '''
-                    cat > build-info.txt <<EOF
-APP_NAME=$APP_NAME
-IMAGE_REPO=$IMAGE_REPO
-IMAGE_TAG=$IMAGE_TAG
-IMAGE_FULL_NAME=$IMAGE_FULL_NAME
-BUILD_NUMBER=$BUILD_NUMBER
-GIT_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo unknown)
-EOF
+                unstash 'source-code'
 
-                    cat build-info.txt
+                sh '''
+                    echo "Final build metadata:"
+                    cat build-info.env
                 '''
 
-                archiveArtifacts artifacts: 'build-info.txt', fingerprint: true
+                archiveArtifacts artifacts: 'build-info.env', fingerprint: true
             }
         }
     }
@@ -220,7 +225,6 @@ EOF
     post {
         success {
             echo "Pipeline completed successfully."
-            echo "Image pushed: ${IMAGE_FULL_NAME}"
         }
 
         failure {
@@ -231,7 +235,7 @@ EOF
             node('docker-agent') {
                 sh '''
                     echo "Cleaning Docker resources..."
-                    docker rm -f ${APP_NAME}-test 2>/dev/null || true
+                    docker rm -f test-pipeline-app-test 2>/dev/null || true
                     docker image prune -f || true
                 '''
             }
