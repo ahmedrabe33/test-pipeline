@@ -1,6 +1,11 @@
 pipeline {
     agent none
 
+    options {
+        skipDefaultCheckout(true)
+        timestamps()
+    }
+
     environment {
         APP_NAME = "test-pipeline-app"
         DOCKERHUB_USERNAME = "ahmedrabie222000"
@@ -25,8 +30,9 @@ pipeline {
                     echo "Git commit:"
                     git rev-parse --short HEAD
 
-                    echo "Verify app files:"
+                    echo "Verify required app files:"
                     test -f package.json
+                    test -f package-lock.json
                     test -f Dockerfile
                     test -d src
                     test -d test
@@ -78,7 +84,7 @@ pipeline {
 
                         sh '''
                             echo "Installing dependencies..."
-                            npm install
+                            npm ci
 
                             echo "Running dependency audit..."
                             npm audit --audit-level=high || true
@@ -95,6 +101,10 @@ pipeline {
                 unstash 'source-code'
 
                 sh '''
+                    echo "Current workspace:"
+                    pwd
+                    ls -la
+
                     echo "Building Docker image..."
                     docker build -t $IMAGE_NAME:$IMAGE_TAG .
 
@@ -114,20 +124,22 @@ pipeline {
                 sh '''
                     echo "Running container smoke test..."
 
-                    docker rm -f $APP_NAME-test || true
+                    docker rm -f ${APP_NAME}-test 2>/dev/null || true
 
                     docker run -d \
-                      --name $APP_NAME-test \
+                      --name ${APP_NAME}-test \
                       -p 3000:3000 \
                       $IMAGE_NAME:$IMAGE_TAG
 
                     sleep 5
 
+                    echo "Testing health endpoint..."
                     curl -f http://localhost:3000/health
 
-                    docker logs $APP_NAME-test
+                    echo "Container logs:"
+                    docker logs ${APP_NAME}-test
 
-                    docker rm -f $APP_NAME-test
+                    docker rm -f ${APP_NAME}-test 2>/dev/null || true
                 '''
             }
         }
@@ -184,7 +196,8 @@ pipeline {
         always {
             node('docker-agent') {
                 sh '''
-                    docker rm -f $APP_NAME-test || true
+                    echo "Cleaning Docker resources..."
+                    docker rm -f ${APP_NAME}-test 2>/dev/null || true
                     docker image prune -f || true
                 '''
             }
